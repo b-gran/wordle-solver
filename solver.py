@@ -13,22 +13,6 @@ dictionary = [e['word'] for e in top_5k_serialized]
 
 alphabet = list('abcdefghijklmnopqrstuvwxyz')
 
-freq_by_char = {}
-for c in alphabet:
-    freq_by_char[c] = 0
-for w in dictionary:
-    for c in w:
-        freq_by_char[c] = freq_by_char[c] + 1
-x = list(freq_by_char.items())
-x.sort(key=lambda i: i[1])
-
-
-def char_freq(w: str) -> typing.Dict[str, int]:
-    r = collections.defaultdict(int)
-    for c in w:
-        r[c] = r[c] + 1
-    return r
-
 
 class Clue(Enum):
     NOT_PRESENT = 0
@@ -237,27 +221,6 @@ def make_trie(dictionary: typing.List[str]) -> Node:
 dictionary_trie = make_trie(dictionary)
 
 
-# def filter_word(word: str, metaclues: typing.Dict[str, MetaClue], required_letters: typing.Set[str]) -> int:
-#     counts = collections.defaultdict(int)
-#
-#     # for i, char in enumerate(word):
-#     for i in range(5):
-#         char = word[i]
-#         mc = metaclues[char]
-#         counts[char] += 1
-#         if counts[char] > mc.upper_bound:
-#             return 0
-#
-#         if i in mc.impossible_positions:
-#             return 0
-#
-#     for required_letter in required_letters:
-#         if counts[required_letter] < metaclues[required_letter].lower_bound:
-#             return 0
-#
-#     return 1
-
-
 def filter_dict_trie(dict_root: Node, metaclues: typing.Dict[str, MetaClue]) -> int:
     required_letters = set()
     for mc in metaclues.values():
@@ -272,17 +235,6 @@ def filter_dict_trie(dict_root: Node, metaclues: typing.Dict[str, MetaClue]) -> 
             n.prefix_counts[char] <= metaclues[char].upper_bound and depth not in metaclues[char].impossible_positions
         ]
 
-        # next_level = []
-        # for n in frontier:
-        #     for char in n.children:
-        #         mc = metaclues[char]
-        #         if n.prefix_counts[char] > mc.upper_bound:
-        #             continue
-        #         if depth in mc.impossible_positions:
-        #             continue
-        #         next_level.append(n.children[char])
-        # frontier = next_level
-
         depth += 1
 
     num_valid = 0
@@ -295,11 +247,6 @@ def filter_dict_trie(dict_root: Node, metaclues: typing.Dict[str, MetaClue]) -> 
 
         if valid:
             num_valid += 1
-
-    # print(len(frontier))
-    # print(len([n for n in frontier if n))
-    # print([n.prefix for n in frontier])
-    # print('frontier size', num_valid)
 
     return num_valid
 
@@ -343,17 +290,9 @@ def filter_dict_trie(dict_root: Node, metaclues: typing.Dict[str, MetaClue]) -> 
 
 deltas = collections.defaultdict(int)
 
-# with tqdm(total=n * m) as pbar:
-#     for i1 in tqdm(range(n)):
-#         for i2 in tqdm(range(m)):
-#             # do something, e.g. sleep
-#             time.sleep(0.01)
-#             pbar.update(1)
-
 dict_length = len(dictionary)
 
 
-# def get_delta(solution: str, guess: str) -> typing.Tuple[int, str]:
 def get_delta(inp: typing.Tuple[str, str]) -> typing.Tuple[int, str]:
     solution, guess = inp
     clues = get_clues(solution, guess)
@@ -362,30 +301,12 @@ def get_delta(inp: typing.Tuple[str, str]) -> typing.Tuple[int, str]:
     return delta, guess
 
 
-def process():
-    it = 0
-    it_max = 10000
+def solve(clues: typing.List[WordClue]):
+    initial_sc = summarize_clues(clues)
+    filtered_dict = filter_impossible_words(dictionary, initial_sc)
 
-    # with tqdm(total=len(dictionary)**2) as pbar:
-    # # with tqdm(total=it_max) as pbar:
-    #     for solution in dictionary:
-    #         for guess in dictionary:
-    #             clues = get_clues(solution, guess)
-    #             sc = summarize_clues([clues])
-    #
-    #             # delta = dict_length - len(filter_impossible_words(dictionary, sc))
-    #             # delta = dict_length - count_impossible_words(dictionary, sc)
-    #
-    #             delta = dict_length - filter_dict_trie(dictionary_trie, sc)
-    #
-    #             deltas[guess] += delta
-    #             pbar.update(1)
-    #
-    #             # it += 1
-    #             # if it >= it_max:
-    #             #     return
-
-    possibilities = list(itertools.product(dictionary, dictionary))
+    # possibilities = list(itertools.product(filtered_dict, dictionary))
+    possibilities = list(itertools.product(filtered_dict, filtered_dict))
 
     try:
         workers = cpu_count()
@@ -394,7 +315,8 @@ def process():
         workers = 1
     print('using {} workers'.format(workers))
 
-    with tqdm(total=len(dictionary)**2) as pbar:
+    # with tqdm(total=len(dictionary) * len(filtered_dict)) as pbar:
+    with tqdm(total=len(filtered_dict) * len(filtered_dict)) as pbar:
         pool = Pool(processes=workers)
         result = pool.imap(get_delta, possibilities)
         for r in result:
@@ -402,15 +324,56 @@ def process():
             deltas[guess] += delta
             pbar.update(1)
 
-process()
+    filtered_dict.sort(key=lambda w: -deltas[w])
+    # dictionary.sort(key=lambda w: -deltas[w])
+    serialized_deltas = [{
+        'word': w,
+        'deltas': deltas[w]
+    } for w in filtered_dict]
+    # } for w in dictionary]
 
-dictionary.sort(key=lambda w: -deltas[w])
-serialized_deltas = [{
-    'word': w,
-    'deltas': deltas[w]
-} for w in dictionary]
+    out_file = open('deltas.json', 'w')
+    json.dump(serialized_deltas, out_file)
 
-out_file = open('deltas.json', 'w')
-json.dump(serialized_deltas, out_file)
+    # print('\n'.join(list(map(lambda w: '{} {}'.format(w, deltas[w]), dictionary))))
+    print('\n'.join(list(map(lambda w: '{} {}'.format(w, deltas[w]), filtered_dict))))
 
-print('\n'.join(list(map(lambda w: '{} {}'.format(w, deltas[w]), dictionary))))
+
+def from_wordle(guess: str, clue: typing.List[Clue]) -> WordClue:
+    # @dataclass
+    # class LetterClue:
+    #     type: Clue
+    #     character: str
+    #     position: int
+    result = []
+    for i, char in enumerate(guess):
+        result.append(LetterClue(
+            type=clue[i],
+            character=char,
+            position=i,
+        ))
+    return result
+
+
+clue1 = from_wordle('raise', [
+    Clue.PRESENT_INCORRECT_LOCATION,
+    Clue.PRESENT_INCORRECT_LOCATION,
+    Clue.NOT_PRESENT,
+    Clue.NOT_PRESENT,
+    Clue.NOT_PRESENT
+])
+clue2 = from_wordle('croak', [
+    Clue.NOT_PRESENT,
+    Clue.PRESENT_CORRECT_LOCATION,
+    Clue.NOT_PRESENT,
+    Clue.PRESENT_INCORRECT_LOCATION,
+    Clue.NOT_PRESENT
+])
+
+clues = [clue1]
+sc = summarize_clues(clues)
+print(filter_impossible_words(dictionary, sc))
+p(sc)
+filter_dict_trie(dictionary_trie, sc)
+
+solve(clues)
