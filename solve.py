@@ -264,24 +264,23 @@ def filter_dict_trie(dict_root: Node, metaclues: typing.Dict[str, MetaClue]) -> 
     depth = 0
     frontier = [dict_root]
     while frontier and depth < 5:
-        next_level = []
+        frontier = [
+            n.children[char] for n in frontier for char in n.children if
+            n.prefix_counts[char] <= metaclues[char].upper_bound and depth not in metaclues[char].impossible_positions
+        ]
 
-        # next_level = [
-        #     n.children[char] for n in frontier for char in n.children if
-        #     n.prefix_counts[char] <= metaclues[char].upper_bound and depth not in metaclues[char].impossible_positions
-        # ]
-
-        for n in frontier:
-            for char in n.children:
-                mc = metaclues[char]
-                if n.prefix_counts[char] > mc.upper_bound:
-                    continue
-                if depth in mc.impossible_positions:
-                    continue
-                next_level.append(n.children[char])
+        # next_level = []
+        # for n in frontier:
+        #     for char in n.children:
+        #         mc = metaclues[char]
+        #         if n.prefix_counts[char] > mc.upper_bound:
+        #             continue
+        #         if depth in mc.impossible_positions:
+        #             continue
+        #         next_level.append(n.children[char])
+        # frontier = next_level
 
         depth += 1
-        frontier = next_level
 
     num_valid = 0
     for n in frontier:
@@ -290,6 +289,7 @@ def filter_dict_trie(dict_root: Node, metaclues: typing.Dict[str, MetaClue]) -> 
             if n.prefix_counts[required_letter] < metaclues[required_letter].lower_bound:
                 valid = False
                 break
+
         if valid:
             num_valid += 1
 
@@ -352,8 +352,9 @@ dict_length = len(dictionary)
 
 def process():
     it = 0
-    with tqdm(total=len(dictionary)**2) as pbar:
-    # with tqdm(total=1000) as pbar:
+    it_max = 10000
+    # with tqdm(total=len(dictionary)**2) as pbar:
+    with tqdm(total=it_max) as pbar:
         for solution in dictionary:
             for guess in dictionary:
                 clues = get_clues(solution, guess)
@@ -367,9 +368,9 @@ def process():
                 deltas[guess] += delta
                 pbar.update(1)
 
-                # it += 1
-                # if it >= 1000:
-                #     return
+                it += 1
+                if it >= it_max:
+                    return
 
 
 process()
