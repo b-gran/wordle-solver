@@ -45,7 +45,7 @@ WordClue = typing.List[LetterClue]
 
 # from https://github.com/lynn/hello-wordl/blob/00ef8569149bd998f5a992853172a1a30b4914b2/src/clue.ts#L12
 def get_clues(solution: str, guess: str) -> WordClue:
-    clue = [0, 0, 0, 0, 0]
+    clue = []
 
     elusive = collections.defaultdict(int)
     for i, c in enumerate(solution):
@@ -54,15 +54,12 @@ def get_clues(solution: str, guess: str) -> WordClue:
 
     for i, guess_char in enumerate(guess):
         if solution[i] == guess_char:
-            # clue.append(LetterClue(type=Clue.PRESENT_CORRECT_LOCATION, character=guess_char, position=i))
-            clue[i] = LetterClue(type=Clue.PRESENT_CORRECT_LOCATION, character=guess_char, position=i)
+            clue.append(LetterClue(type=Clue.PRESENT_CORRECT_LOCATION, character=guess_char, position=i))
         elif elusive[guess_char] > 0:
             elusive[guess_char] -= 1
-            # clue.append(LetterClue(type=Clue.PRESENT_INCORRECT_LOCATION, character=guess_char, position=i))
-            clue[i] = LetterClue(type=Clue.PRESENT_INCORRECT_LOCATION, character=guess_char, position=i)
+            clue.append(LetterClue(type=Clue.PRESENT_INCORRECT_LOCATION, character=guess_char, position=i))
         else:
-            # clue.append(LetterClue(type=Clue.NOT_PRESENT, character=guess_char, position=i))
-            clue[i] = LetterClue(type=Clue.NOT_PRESENT, character=guess_char, position=i)
+            clue.append(LetterClue(type=Clue.NOT_PRESENT, character=guess_char, position=i))
 
     return clue
 
@@ -75,6 +72,9 @@ class MetaClue:
     impossible_positions: typing.Set[int]
     lower_bound: int
     upper_bound: int
+
+
+ALL_POSITIONS = {0, 1, 2, 3, 4}
 
 
 def summarize_clues(clues: typing.List[WordClue]) -> typing.Dict[str, MetaClue]:
@@ -117,7 +117,7 @@ def summarize_clues(clues: typing.List[WordClue]) -> typing.Dict[str, MetaClue]:
 
                 # we already know all positions for the character, so we can mark the rest as impossible
                 if len(mc.fixed_positions) == clues[char]:
-                    mc.impossible_positions = {0, 1, 2, 3, 4}.difference(mc.fixed_positions)
+                    mc.impossible_positions = ALL_POSITIONS.difference(mc.fixed_positions)
 
             # if we got at least one clue, we can update the lower bound on the
             # number of occurrences in the solution.
@@ -129,7 +129,7 @@ def summarize_clues(clues: typing.List[WordClue]) -> typing.Dict[str, MetaClue]:
             if nps[char] > 0 and clues[char] == 0:
                 mc.lower_bound = 0
                 mc.upper_bound = 0
-                mc.impossible_positions = {0, 1, 2, 3, 4}
+                mc.impossible_positions = ALL_POSITIONS
 
         sum_of_lower_bounds = 0
         all_fixed_positions = set()
@@ -138,35 +138,52 @@ def summarize_clues(clues: typing.List[WordClue]) -> typing.Dict[str, MetaClue]:
             all_fixed_positions.update(mc.fixed_positions)
 
         for mc in metaclues.values():
-            mc.upper_bound = min(mc.upper_bound, 5-(sum_of_lower_bounds-mc.lower_bound))
+            mc.upper_bound = min(mc.upper_bound, 5 - (sum_of_lower_bounds - mc.lower_bound))
             if mc.upper_bound == 0:
-                mc.impossible_positions = {0, 1, 2, 3, 4}
+                mc.impossible_positions = ALL_POSITIONS
             else:
                 mc.impossible_positions.update(all_fixed_positions.difference(mc.fixed_positions))
 
     return metaclues
 
 
-def filter_word(word: str, metaclues: typing.Dict[str, MetaClue]) -> bool:
+def filter_word(word: str, metaclues: typing.Dict[str, MetaClue], required_letters: typing.Set[str]) -> int:
     counts = collections.defaultdict(int)
-    for i, char in enumerate(word):
+
+    # for i, char in enumerate(word):
+    for i in range(5):
+        char = word[i]
         mc = metaclues[char]
         counts[char] += 1
         if counts[char] > mc.upper_bound:
-            return False
+            return 0
 
         if i in mc.impossible_positions:
-            return False
+            return 0
 
-    for mc in metaclues.values():
-        if counts[mc.character] < mc.lower_bound:
-            return False
+    for required_letter in required_letters:
+        if counts[required_letter] < metaclues[required_letter].lower_bound:
+            return 0
 
-    return True
+    return 1
 
 
 def filter_impossible_words(dictionary: typing.List[str], metaclues: typing.Dict[str, MetaClue]) -> typing.List[str]:
     return list(filter(lambda w: filter_word(w, metaclues), dictionary))
+
+
+def count_impossible_words(dictionary: typing.List[str], metaclues: typing.Dict[str, MetaClue]) -> int:
+    required_letters = set()
+    for mc in metaclues.values():
+        if mc.lower_bound > 0:
+            required_letters.add(mc.character)
+
+    total = 0
+    # for w in dictionary:
+    #     # if filter_word(w, metaclues, required_letters):
+    #     #     total += 1
+    #     total += filter_word(w, metaclues, required_letters)
+    return total
 
 
 def print_mc(mc: MetaClue):
@@ -218,15 +235,29 @@ deltas = collections.defaultdict(int)
 
 dict_length = len(dictionary)
 
-with tqdm(total=len(dictionary)**2) as pbar:
-    for solution in dictionary:
-        for guess in dictionary:
-            clues = get_clues(solution, guess)
-            sc = summarize_clues([clues])
-            delta = dict_length - len(filter_impossible_words(dictionary, sc))
-            deltas[guess] += delta
-            pbar.update(1)
+
+def process():
+    it = 0
+    # with tqdm(total=len(dictionary)**2) as pbar:
+    with tqdm(total=1000) as pbar:
+        for solution in dictionary:
+            for guess in dictionary:
+                clues = get_clues(solution, guess)
+                sc = summarize_clues([clues])
+
+                # delta = dict_length - len(filter_impossible_words(dictionary, sc))
+                delta = dict_length - count_impossible_words(dictionary, sc)
+                deltas[guess] += delta
+                pbar.update(1)
+                it += 1
+
+                if it >= 1000:
+                    return
+
+
+process()
 
 dictionary.sort(key=lambda w: -deltas[w])
 
 print('\n'.join(list(map(lambda w: '{} {}'.format(w, deltas[w]), dictionary[:100]))))
+print('\n'.join(list(map(lambda w: '{} {}'.format(w, deltas[w]), dictionary[-100:]))))
