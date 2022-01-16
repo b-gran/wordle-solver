@@ -1,0 +1,10 @@
+click==8.0.3
+flamegraph @ git+https://github.com/evanhempel/python-flamegraph.git@6b70f9068cb987a2b1942fbf048fc88a7a644c40
+flameprof==0.4
+importlib-metadata==4.10.0
+joblib==1.1.0
+nltk==3.6.7
+regex==2021.11.10
+tqdm==4.62.3
+typing-extensions==4.0.1
+zipp==3.7.0
