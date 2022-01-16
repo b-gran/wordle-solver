@@ -5,11 +5,48 @@ import collections
 from dataclasses import dataclass
 from tqdm import tqdm
 import itertools
-
 from multiprocessing import Pool, cpu_count
+import numpy as np
 
+
+def get_normalized_freq_by_word(fbw: typing.Union[typing.Dict[str, int], typing.DefaultDict[str, int]]) -> typing.DefaultDict[str, float]:
+    min_freq = min(fbw.values())
+    result = collections.defaultdict(float)
+    result.update({
+        k: fbw[k] / min_freq for k in fbw
+    })
+    return result
+
+
+invalid_words = set(open("invalid_words.txt").read().splitlines())
 top_5k_serialized = json.load(open('top_5k_words.json'))
-dictionary = [e['word'] for e in top_5k_serialized]
+freq_by_word = collections.defaultdict(int)
+freq_by_word.update({
+    f['word']: f['frequency'] for f in top_5k_serialized
+})
+normalized_freq_by_word = get_normalized_freq_by_word(freq_by_word)
+frequencies = [e['frequency'] for e in top_5k_serialized]
+
+freq_p30 = np.quantile(frequencies, 0.3)
+freq_p90 = np.quantile(frequencies, 0.9)
+
+# wordle
+# solutions = list(open('solutions.txt').read().splitlines())
+# accepted = list(open('accepted.txt').read().splitlines())
+
+# hello wordl
+solutions = list(open('solutions_hello_wordl.txt').read().splitlines())
+accepted = list(open('accepted_hello_wordl.txt').read().splitlines())
+
+
+def get_solution_probability_adjustment(frequency: typing.Union[int, float]) -> int:
+    if frequency >= freq_p90:
+        return 2
+    elif frequency >= freq_p30:
+        return 4
+    else:
+        return 1
+
 
 alphabet = list('abcdefghijklmnopqrstuvwxyz')
 
@@ -218,7 +255,7 @@ def make_trie(dictionary: typing.List[str]) -> Node:
     return root
 
 
-dictionary_trie = make_trie(dictionary)
+dictionary_trie = make_trie(solutions)
 
 
 def filter_dict_trie(dict_root: Node, metaclues: typing.Dict[str, MetaClue]) -> int:
@@ -227,9 +264,13 @@ def filter_dict_trie(dict_root: Node, metaclues: typing.Dict[str, MetaClue]) -> 
         if mc.lower_bound > 0:
             required_letters.add(mc.character)
 
+    # print('required letters', required_letters)
+
     depth = 0
     frontier = [dict_root]
     while frontier and depth < 5:
+        # print('frontier at depth', depth)
+        # print('\n'.join([n.character for n in frontier]))
         frontier = [
             n.children[char] for n in frontier for char in n.children if
             n.prefix_counts[char] <= metaclues[char].upper_bound and depth not in metaclues[char].impossible_positions
@@ -237,11 +278,16 @@ def filter_dict_trie(dict_root: Node, metaclues: typing.Dict[str, MetaClue]) -> 
 
         depth += 1
 
+    # print('frontier at depth', depth)
+    # print('\n'.join([n.character for n in frontier]))
+
     num_valid = 0
     for n in frontier:
+        # print('considering', n.prefix)
         valid = True
         for required_letter in required_letters:
             if n.prefix_counts[required_letter] < metaclues[required_letter].lower_bound:
+                # print('invalid, not enough chars')
                 valid = False
                 break
 
@@ -290,23 +336,40 @@ def filter_dict_trie(dict_root: Node, metaclues: typing.Dict[str, MetaClue]) -> 
 
 deltas = collections.defaultdict(int)
 
-dict_length = len(dictionary)
+dict_length = len(solutions)
 
 
-def get_delta(inp: typing.Tuple[str, str]) -> typing.Tuple[int, str]:
-    solution, guess = inp
+
+def get_delta(inp: typing.Tuple[str, str, int, Node]) -> typing.Tuple[float, str]:
+    """
+        get_delta(solution: str, guess: str, dict_size: int, dict_trie: Node]) -> typing.Tuple[int, str]
+    """
+    solution, guess, dict_size, dict_trie = inp
     clues = get_clues(solution, guess)
     sc = summarize_clues([clues])
-    delta = dict_length - filter_dict_trie(dictionary_trie, sc)
+
+    # non-normalized - just checks how many solutions are removed with this guess
+    # delta = dict_size - filter_dict_trie(dict_trie, sc)
+
+    # normalized - what percentage of all solutions were removed
+    delta = (dict_size - filter_dict_trie(dict_trie, sc)) * 1.0 / dict_size
+
     return delta, guess
 
 
 def solve(clues: typing.List[WordClue]):
     initial_sc = summarize_clues(clues)
-    filtered_dict = filter_impossible_words(dictionary, initial_sc)
+    filtered_dict = filter_impossible_words(solutions, initial_sc)
+    trie = make_trie(filtered_dict)
 
-    # possibilities = list(itertools.product(filtered_dict, dictionary))
-    possibilities = list(itertools.product(filtered_dict, filtered_dict))
+    solution_dict = filtered_dict.copy()
+    guess_dict = accepted.copy()
+
+    # TODO: this will only guess possible solutions
+    # solution_dict = filtered_dict
+    # guess_dict = filtered_dict
+
+    possibilities = list(itertools.product(solution_dict, guess_dict, [len(filtered_dict)], [trie]))
 
     try:
         workers = cpu_count()
@@ -315,36 +378,82 @@ def solve(clues: typing.List[WordClue]):
         workers = 1
     print('using {} workers'.format(workers))
 
-    # with tqdm(total=len(dictionary) * len(filtered_dict)) as pbar:
-    with tqdm(total=len(filtered_dict) * len(filtered_dict)) as pbar:
+    with tqdm(total=len(solution_dict) * len(guess_dict)) as pbar:
         pool = Pool(processes=workers)
         result = pool.imap(get_delta, possibilities)
         for r in result:
             delta, guess = r
-            deltas[guess] += delta
+            deltas[guess] += (delta/len(solution_dict))
             pbar.update(1)
 
-    filtered_dict.sort(key=lambda w: -deltas[w])
-    # dictionary.sort(key=lambda w: -deltas[w])
+    def score(guess: str) -> float:
+        if guess in solution_dict:
+            return deltas[guess] * get_solution_probability_adjustment(freq_by_word[guess])
+        else:
+            return deltas[guess]
+
+    def choose() -> str:
+        # only one option let, choose it!
+        if len(solution_dict) == 1:
+            return solution_dict[0]
+
+        guess_dict.sort(key=lambda w: -score(w))
+
+        # if we have only 2 solutions, just pick the best guess by score. tree pruning doesn't matter.
+        if len(solution_dict) < 3:
+            return guess_dict[0]
+
+        # if we have more than 2 guesses, first check if there is an obvious "best" choice (defined by the top
+        # choice being 2x larger than the second best). if so, choose this option and try to win the game.
+        if score(guess_dict[0]) > 2*score(guess_dict[1]):
+            print('Choosing best option by score')
+            return guess_dict[0]
+
+        # otherwise, default to a tree pruning strategy.
+        print('Choosing best option by tree pruning ratio')
+        guess_dict.sort(key=lambda w: -deltas[w])
+        return guess_dict[0]
+
+    print('top 20 guesses (by frequency)')
+    guess_dict.sort(key=lambda w: -normalized_freq_by_word[w])
+    print('\n'.join(list(map(lambda w: '{} {}'.format(w, normalized_freq_by_word[w]), guess_dict[:20]))))
+    print('===========')
+
+    print('top 20 guesses (by delta)')
+    guess_dict.sort(key=lambda w: -deltas[w])
+    print('\n'.join(list(map(
+        lambda w: '{} {}'.format(w, deltas[w]), guess_dict[:20])
+    )))
+    print('===========')
+
+    print('top 20 guesses (by quantile adjustment)')
+    guess_dict.sort(key=lambda w: -get_solution_probability_adjustment(freq_by_word[w]))
+    print('\n'.join(list(map(
+        lambda w: '{} {}'.format(w, get_solution_probability_adjustment(freq_by_word[w])), guess_dict[:20])
+    )))
+    print('===========')
+
+    print('top 20 guesses (by score)')
+    guess_dict.sort(key=lambda w: -score(w))
+    print('\n'.join(list(map(
+        lambda w: '{} {}'.format(w, score(w)), guess_dict[:20])
+    )))
+    print('===========')
+
+    guess_dict.sort(key=lambda w: -score(w))
     serialized_deltas = [{
         'word': w,
-        'deltas': deltas[w]
-    } for w in filtered_dict]
-    # } for w in dictionary]
+        'deltas': score(w)
+    } for w in guess_dict]
 
     out_file = open('deltas.json', 'w')
     json.dump(serialized_deltas, out_file)
 
-    # print('\n'.join(list(map(lambda w: '{} {}'.format(w, deltas[w]), dictionary))))
-    print('\n'.join(list(map(lambda w: '{} {}'.format(w, deltas[w]), filtered_dict))))
+    best_option = choose()
+    print('Best option:', best_option)
 
 
 def from_wordle(guess: str, clue: typing.List[Clue]) -> WordClue:
-    # @dataclass
-    # class LetterClue:
-    #     type: Clue
-    #     character: str
-    #     position: int
     result = []
     for i, char in enumerate(guess):
         result.append(LetterClue(
@@ -356,24 +465,44 @@ def from_wordle(guess: str, clue: typing.List[Clue]) -> WordClue:
 
 
 clue1 = from_wordle('raise', [
-    Clue.PRESENT_INCORRECT_LOCATION,
-    Clue.PRESENT_INCORRECT_LOCATION,
-    Clue.NOT_PRESENT,
-    Clue.NOT_PRESENT,
-    Clue.NOT_PRESENT
-])
-clue2 = from_wordle('croak', [
-    Clue.NOT_PRESENT,
+    Clue.PRESENT_CORRECT_LOCATION,
     Clue.PRESENT_CORRECT_LOCATION,
     Clue.NOT_PRESENT,
+    Clue.NOT_PRESENT,
     Clue.PRESENT_INCORRECT_LOCATION,
-    Clue.NOT_PRESENT
 ])
+clue2 = from_wordle('dicty', [
+    Clue.PRESENT_INCORRECT_LOCATION,
+    Clue.NOT_PRESENT,
+    Clue.NOT_PRESENT,
+    Clue.NOT_PRESENT,
+    Clue.NOT_PRESENT,
+])
+# clue3 = from_wordle('plumb', [
+#     Clue.PRESENT_CORRECT_LOCATION,
+#     Clue.NOT_PRESENT,
+#     Clue.PRESENT_CORRECT_LOCATION,
+#     Clue.NOT_PRESENT,
+#     Clue.NOT_PRESENT,
+# ])
+# clue4 = from_wordle('hakim', [
+#     Clue.NOT_PRESENT,
+#     Clue.PRESENT_CORRECT_LOCATION,
+#     Clue.NOT_PRESENT,
+#     Clue.PRESENT_CORRECT_LOCATION,
+#     Clue.NOT_PRESENT,
+# ])
 
-clues = [clue1]
+# clues = [clue1]
+clues = [clue1, clue2]
+# clues = [clue1, clue2, clue3]
+# clues = [clue1, clue2, clue3, clue4]
 sc = summarize_clues(clues)
-print(filter_impossible_words(dictionary, sc))
+print(filter_impossible_words(solutions, sc))
 p(sc)
 filter_dict_trie(dictionary_trie, sc)
 
 solve(clues)
+
+# filtered_dict = filter_impossible_words(dictionary, sc)
+# filter_dict_trie(make_trie(filtered_dict), sc)
