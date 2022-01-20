@@ -31,12 +31,12 @@ freq_p30 = np.quantile(frequencies, 0.3)
 freq_p90 = np.quantile(frequencies, 0.9)
 
 # wordle
-# solutions = list(open('solutions.txt').read().splitlines())
-# accepted = list(open('accepted.txt').read().splitlines())
+solutions = list(open('solutions.txt').read().splitlines())
+accepted = list(open('accepted.txt').read().splitlines())
 
 # hello wordl
-solutions = list(open('solutions_hello_wordl.txt').read().splitlines())
-accepted = list(open('accepted_hello_wordl.txt').read().splitlines())
+# solutions = list(open('solutions_hello_wordl.txt').read().splitlines())
+# accepted = list(open('accepted_hello_wordl.txt').read().splitlines())
 
 
 def get_solution_probability_adjustment(frequency: typing.Union[int, float]) -> int:
@@ -264,13 +264,9 @@ def filter_dict_trie(dict_root: Node, metaclues: typing.Dict[str, MetaClue]) -> 
         if mc.lower_bound > 0:
             required_letters.add(mc.character)
 
-    # print('required letters', required_letters)
-
     depth = 0
     frontier = [dict_root]
     while frontier and depth < 5:
-        # print('frontier at depth', depth)
-        # print('\n'.join([n.character for n in frontier]))
         frontier = [
             n.children[char] for n in frontier for char in n.children if
             n.prefix_counts[char] <= metaclues[char].upper_bound and depth not in metaclues[char].impossible_positions
@@ -278,16 +274,11 @@ def filter_dict_trie(dict_root: Node, metaclues: typing.Dict[str, MetaClue]) -> 
 
         depth += 1
 
-    # print('frontier at depth', depth)
-    # print('\n'.join([n.character for n in frontier]))
-
     num_valid = 0
     for n in frontier:
-        # print('considering', n.prefix)
         valid = True
         for required_letter in required_letters:
             if n.prefix_counts[required_letter] < metaclues[required_letter].lower_bound:
-                # print('invalid, not enough chars')
                 valid = False
                 break
 
@@ -297,47 +288,7 @@ def filter_dict_trie(dict_root: Node, metaclues: typing.Dict[str, MetaClue]) -> 
     return num_valid
 
 
-# ## Example
-# c1 = get_clues('clamp', 'conch')
-# s1 = summarize_clues([c1])
-# print(len(filter_impossible_words(dictionary, s1)))
-# print(filter_impossible_words(dictionary, s1))
-# p(s1)
-# print(filter_dict_trie(dictionary_trie, s1))
-# print('=====')
-# c2 = get_clues('clamp', 'occur')
-# s2 = summarize_clues([c1, c2])
-# print(len(filter_impossible_words(dictionary, s2)))
-# print(filter_impossible_words(dictionary, s2))
-# p(s2)
-# print(filter_dict_trie(dictionary_trie, s2))
-# print('=====')
-# c3 = get_clues('clamp', 'lathe')
-# s3 = summarize_clues([c1, c2, c3])
-# print(len(filter_impossible_words(dictionary, s3)))
-# print(filter_impossible_words(dictionary, s3))
-# p(s3)
-# print(filter_dict_trie(dictionary_trie, s3))
-# print('=====')
-# c4 = get_clues('clamp', 'lamps')
-# s4 = summarize_clues([c1, c2, c3, c4])
-# print(len(filter_impossible_words(dictionary, s4)))
-# print(filter_impossible_words(dictionary, s4))
-# p(s4)
-# print(filter_dict_trie(dictionary_trie, s4))
-
-# ## Example 2
-# c1 = get_clues('which', 'twice')
-# s1 = summarize_clues([c1])
-# print(len(filter_impossible_words(dictionary, s1)))
-# print(filter_impossible_words(dictionary, s1))
-# p(s1)
-# filter_dict_trie(dictionary_trie, s1)
-
 deltas = collections.defaultdict(int)
-
-dict_length = len(solutions)
-
 
 
 def get_delta(inp: typing.Tuple[str, str, int, Node]) -> typing.Tuple[float, str]:
@@ -464,45 +415,46 @@ def from_wordle(guess: str, clue: typing.List[Clue]) -> WordClue:
     return result
 
 
-clue1 = from_wordle('raise', [
-    Clue.PRESENT_CORRECT_LOCATION,
-    Clue.PRESENT_CORRECT_LOCATION,
+clues = []
+clues.append(from_wordle('raise', [
     Clue.NOT_PRESENT,
     Clue.NOT_PRESENT,
     Clue.PRESENT_INCORRECT_LOCATION,
-])
-clue2 = from_wordle('dicty', [
-    Clue.PRESENT_INCORRECT_LOCATION,
     Clue.NOT_PRESENT,
     Clue.NOT_PRESENT,
-    Clue.NOT_PRESENT,
-    Clue.NOT_PRESENT,
-])
-# clue3 = from_wordle('plumb', [
+]))
+# clues.append(from_wordle('anvil', [
+#     Clue.PRESENT_INCORRECT_LOCATION,
+#     Clue.PRESENT_INCORRECT_LOCATION,
+#     Clue.NOT_PRESENT,
+#     Clue.PRESENT_CORRECT_LOCATION,
+#     Clue.PRESENT_INCORRECT_LOCATION,
+# ]))
+# clues.append(from_wordle('vogue', [
+#     Clue.NOT_PRESENT,
+#     Clue.NOT_PRESENT,
+#     Clue.PRESENT_CORRECT_LOCATION,
+#     Clue.NOT_PRESENT,
+#     Clue.PRESENT_INCORRECT_LOCATION,
+# ]))
+# clues.append(from_wordle('hakim', [
+#     Clue.NOT_PRESENT,
 #     Clue.PRESENT_CORRECT_LOCATION,
 #     Clue.NOT_PRESENT,
 #     Clue.PRESENT_CORRECT_LOCATION,
 #     Clue.NOT_PRESENT,
-#     Clue.NOT_PRESENT,
-# ])
-# clue4 = from_wordle('hakim', [
-#     Clue.NOT_PRESENT,
-#     Clue.PRESENT_CORRECT_LOCATION,
-#     Clue.NOT_PRESENT,
-#     Clue.PRESENT_CORRECT_LOCATION,
-#     Clue.NOT_PRESENT,
-# ])
+# ]))
 
 # clues = [clue1]
-clues = [clue1, clue2]
+# clues = [clue1, clue2]
 # clues = [clue1, clue2, clue3]
 # clues = [clue1, clue2, clue3, clue4]
 sc = summarize_clues(clues)
-print(filter_impossible_words(solutions, sc))
+possible_words = filter_impossible_words(solutions, sc)
+print(possible_words)
+filtered_trie = make_trie(possible_words)
 p(sc)
-filter_dict_trie(dictionary_trie, sc)
+filter_dict_trie(filtered_trie, sc)
 
 solve(clues)
 
-# filtered_dict = filter_impossible_words(dictionary, sc)
-# filter_dict_trie(make_trie(filtered_dict), sc)
