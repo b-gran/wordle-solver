@@ -7,6 +7,7 @@ from tqdm import tqdm
 import itertools
 from multiprocessing import Pool, cpu_count
 import numpy as np
+import argparse
 
 
 def get_normalized_freq_by_word(fbw: typing.Union[typing.Dict[str, int], typing.DefaultDict[str, int]]) -> typing.DefaultDict[str, float]:
@@ -365,31 +366,32 @@ def solve(clues: typing.List[WordClue]):
         guess_dict.sort(key=lambda w: -deltas[w])
         return guess_dict[0]
 
-    print('top 20 guesses (by frequency)')
-    guess_dict.sort(key=lambda w: -normalized_freq_by_word[w])
-    print('\n'.join(list(map(lambda w: '{} {}'.format(w, normalized_freq_by_word[w]), guess_dict[:20]))))
-    print('===========')
-
-    print('top 20 guesses (by delta)')
-    guess_dict.sort(key=lambda w: -deltas[w])
-    print('\n'.join(list(map(
-        lambda w: '{} {}'.format(w, deltas[w]), guess_dict[:20])
-    )))
-    print('===========')
-
-    print('top 20 guesses (by quantile adjustment)')
-    guess_dict.sort(key=lambda w: -get_solution_probability_adjustment(freq_by_word[w]))
-    print('\n'.join(list(map(
-        lambda w: '{} {}'.format(w, get_solution_probability_adjustment(freq_by_word[w])), guess_dict[:20])
-    )))
-    print('===========')
-
-    print('top 20 guesses (by score)')
-    guess_dict.sort(key=lambda w: -score(w))
-    print('\n'.join(list(map(
-        lambda w: '{} {}'.format(w, score(w)), guess_dict[:20])
-    )))
-    print('===========')
+    # Exploring several ways to choose the guess
+    # print('top 20 guesses (by frequency)')
+    # guess_dict.sort(key=lambda w: -normalized_freq_by_word[w])
+    # print('\n'.join(list(map(lambda w: '{} {}'.format(w, normalized_freq_by_word[w]), guess_dict[:20]))))
+    # print('===========')
+    #
+    # print('top 20 guesses (by delta)')
+    # guess_dict.sort(key=lambda w: -deltas[w])
+    # print('\n'.join(list(map(
+    #     lambda w: '{} {}'.format(w, deltas[w]), guess_dict[:20])
+    # )))
+    # print('===========')
+    #
+    # print('top 20 guesses (by quantile adjustment)')
+    # guess_dict.sort(key=lambda w: -get_solution_probability_adjustment(freq_by_word[w]))
+    # print('\n'.join(list(map(
+    #     lambda w: '{} {}'.format(w, get_solution_probability_adjustment(freq_by_word[w])), guess_dict[:20])
+    # )))
+    # print('===========')
+    #
+    # print('top 20 guesses (by score)')
+    # guess_dict.sort(key=lambda w: -score(w))
+    # print('\n'.join(list(map(
+    #     lambda w: '{} {}'.format(w, score(w)), guess_dict[:20])
+    # )))
+    # print('===========')
 
     guess_dict.sort(key=lambda w: -score(w))
     serialized_deltas = [{
@@ -415,46 +417,35 @@ def from_wordle(guess: str, clue: typing.List[Clue]) -> WordClue:
     return result
 
 
-clues = []
-clues.append(from_wordle('raise', [
-    Clue.NOT_PRESENT,
-    Clue.NOT_PRESENT,
-    Clue.PRESENT_INCORRECT_LOCATION,
-    Clue.NOT_PRESENT,
-    Clue.NOT_PRESENT,
-]))
-# clues.append(from_wordle('anvil', [
-#     Clue.PRESENT_INCORRECT_LOCATION,
-#     Clue.PRESENT_INCORRECT_LOCATION,
-#     Clue.NOT_PRESENT,
-#     Clue.PRESENT_CORRECT_LOCATION,
-#     Clue.PRESENT_INCORRECT_LOCATION,
-# ]))
-# clues.append(from_wordle('vogue', [
-#     Clue.NOT_PRESENT,
-#     Clue.NOT_PRESENT,
-#     Clue.PRESENT_CORRECT_LOCATION,
-#     Clue.NOT_PRESENT,
-#     Clue.PRESENT_INCORRECT_LOCATION,
-# ]))
-# clues.append(from_wordle('hakim', [
-#     Clue.NOT_PRESENT,
-#     Clue.PRESENT_CORRECT_LOCATION,
-#     Clue.NOT_PRESENT,
-#     Clue.PRESENT_CORRECT_LOCATION,
-#     Clue.NOT_PRESENT,
-# ]))
+def parse_clue_cli(guess: str, clue: str) -> WordClue:
+    assert len(guess) == 5, 'Guess {} must be 5 characters long'.format(guess)
+    assert len(clue) == 5, 'Clue {} must be 5 characters long'.format(clue)
 
-# clues = [clue1]
-# clues = [clue1, clue2]
-# clues = [clue1, clue2, clue3]
-# clues = [clue1, clue2, clue3, clue4]
-sc = summarize_clues(clues)
-possible_words = filter_impossible_words(solutions, sc)
-print(possible_words)
-filtered_trie = make_trie(possible_words)
-p(sc)
-filter_dict_trie(filtered_trie, sc)
+    result = []
+    for i, char in enumerate(guess):
+        c = Clue.NOT_PRESENT
+        if clue[i].lower() == 'g':
+            c = Clue.PRESENT_CORRECT_LOCATION
+        elif clue[i].lower() == 'y':
+            c = Clue.PRESENT_INCORRECT_LOCATION
+
+        result.append(LetterClue(
+            type=c,
+            character=char,
+            position=i,
+        ))
+    return result
+
+
+parser = argparse.ArgumentParser(description='Solve wordle!')
+parser.add_argument('--guess', action='append', help='A guess that you entered', required=True)
+parser.add_argument('--clues', action='append', help='The clues you received for this guess', required=True)
+
+# Execute the parse_args() method
+args = parser.parse_args()
+
+assert len(args.guess) == len(args.clues), 'Must provide the same number of clues as guesses'
+
+clues = list(map(lambda i: parse_clue_cli(args.guess[i], args.clues[i]), range(len(args.guess))))
 
 solve(clues)
-
