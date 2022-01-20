@@ -11,7 +11,7 @@ The solver algorithm works as follows:
 
 **2) "summarize" the clues seen so far - i.e. which letters are legal in which positions and how many times must each letter appear in the solution**
 
-**3) choose the guess that will maximize the number of leaves removed from the dictionary tree for all possible guesses**
+**3) choose the guess that will maximize the number of leaves removed from the dictionary tree for all possible solutions**
 
 In pseudocode, (3) is performed as follows:
 ```
@@ -25,6 +25,7 @@ choose the guess with the maximum leaves removed (i.e. sum(leaves_removed(*, gue
 # Usage
 
 The first guess was precomputed as `raise`, so the solver should always use `raise` as its first guess.
+T
 
 Afterward, enter each subsequent guess and its corresponding clues as follows:
 
